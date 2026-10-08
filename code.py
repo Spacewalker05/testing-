@@ -17,6 +17,7 @@ if mode in ("Manual entry", "Demo data"):
     n = st.sidebar.number_input("Number of samples (n)", min_value=1, max_value=20, value=3, step=1)
 log_y = st.sidebar.checkbox("Log scale (|Current|)", value=False)
 show_markers = st.sidebar.checkbox("Show data points", value=True)
+line_w = st.sidebar.slider("Line thickness", 0.3, 3.0, 0.8, 0.1)
 sort_v = st.sidebar.checkbox("Sort by voltage (turn OFF for forward/reverse sweeps)", value=False)
 layout = st.sidebar.selectbox(
     "Column layout",
@@ -142,12 +143,12 @@ except Exception as e:
 
 # ---------------- Plot ----------------
 if samples:
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(9, 5))
     for name, df in samples.items():
         if sort_v:
             df = df.sort_values("Voltage")
         y = df["Current"].abs() if log_y else df["Current"]
-        ax.plot(df["Voltage"], y, marker="o" if show_markers else None, markersize=3, linewidth=1.2, label=name)
+        ax.plot(df["Voltage"], y, marker="o" if show_markers else None, markersize=2.5, linewidth=line_w, label=name)
 
     ax.set_xlabel(f"Voltage ({v_unit})")
     ax.set_ylabel(f"Current ({i_unit})")
@@ -155,8 +156,8 @@ if samples:
     if log_y:
         ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
-    ax.legend()
-    st.pyplot(fig)
+    ax.legend(title="Samples", loc="upper left", bbox_to_anchor=(1.02, 1), frameon=False)
+    st.pyplot(fig, bbox_inches="tight")
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
