@@ -101,51 +101,72 @@ def make_plot(groups, ylabel, colors, o):
     plt.rcParams["mathtext.default"] = "regular"
     fs = o["font"]
     rng = np.random.default_rng(o["seed"])
+    n = len(groups)
+    w = min(max(0.95 * n + 1.8, 3.4), 12) if o["auto_w"] else o["w"]
 
-    fig, ax = plt.subplots(figsize=(o["w"], o["h"]))
-    names = list(groups)
-    for i, nm in enumerate(names):
-        vals, x, c = groups[nm], i + 1, colors[nm]
+    fig, ax = plt.subplots(figsize=(w, o["h"]))
+    lows, highs = [], []
+    stats = {}
+    for nm, vals in groups.items():
+        m = vals.mean()
+        sd = vals.std(ddof=1) if len(vals) > 1 else 0.0
+        e = {"SD": sd, "SEM": sd / np.sqrt(len(vals)), "None": 0.0}[o["err"]]
+        stats[nm] = (m, e)
+        if o["style"] == "box":
+            lows.append(vals.min()); highs.append(vals.max())
+        else:
+            lows.append(min(vals.min(), m - e)); highs.append(max(vals.max(), m + e))
+    span = (max(highs) - min(lows)) or 1.0
 
-        if o["box"]:
-            bp = ax.boxplot(vals, positions=[x], widths=o["box_w"], showfliers=False,
+    for i, (nm, vals) in enumerate(groups.items()):
+        x, c = i + 1, colors[nm]
+        m, e = stats[nm]
+
+        if o["style"] == "box":
+            bp = ax.boxplot(vals, positions=[x], widths=0.55, showfliers=False,
                             patch_artist=True, manage_ticks=False)
             for patch in bp["boxes"]:
-                patch.set_facecolor(to_rgba(c, 0.2))
+                patch.set_facecolor(to_rgba(c, 0.18))
                 patch.set_edgecolor(c)
-                patch.set_linewidth(1.3)
-            for key in ("whiskers", "caps", "medians"):
-                plt.setp(bp[key], color=c, linewidth=1.3)
+                patch.set_linewidth(1.4)
+            for key in ("whiskers", "caps"):
+                plt.setp(bp[key], color=c, linewidth=1.4)
+            plt.setp(bp["medians"], color=c, linewidth=2.0)
 
         jitter = rng.uniform(-o["jitter"], o["jitter"], len(vals))
         ax.scatter(x + jitter, vals, s=o["size"], marker=o["marker"], facecolor=c,
-                   edgecolor="k", linewidth=0.6, alpha=o["alpha"], zorder=3)
+                   edgecolor="white", linewidth=0.8, alpha=o["alpha"], zorder=3)
 
-        if o["mean"]:
-            m = vals.mean()
-            ax.hlines(m, x - 0.3, x + 0.3, colors="k", linewidth=2, zorder=4)
-            if o["err"] != "None" and len(vals) > 1:
-                sd = vals.std(ddof=1)
-                e = sd if o["err"] == "SD" else sd / np.sqrt(len(vals))
-                ax.errorbar(x, m, yerr=e, fmt="none", ecolor="k", elinewidth=1.5,
-                            capsize=5, capthick=1.5, zorder=4)
+        if o["style"] == "box":
+            ax.scatter(x, m, marker="D", s=o["size"] * 0.8, facecolor="white",
+                       edgecolor="k", linewidth=1.2, zorder=5)
+        else:
+            ax.hlines(m, x - 0.28, x + 0.28, colors="k", linewidth=2.0, zorder=4)
+            if e > 0:
+                ax.errorbar(x, m, yerr=e, fmt="none", ecolor="k", elinewidth=1.3,
+                            capsize=4, capthick=1.3, zorder=4)
 
-    ax.set_xlim(0.4, len(names) + 0.6)
-    ax.set_xticks(range(1, len(names) + 1))
-    ax.set_xticklabels(names, rotation=o["rot"], ha="right" if o["rot"] not in (0, 90) else "center",
-                       fontsize=fs)
-    ax.set_ylabel(ylabel, fontsize=fs + 2)
+        if o["show_vals"]:
+            top = vals.max() if o["style"] == "box" else max(vals.max(), m + e)
+            ax.text(x, top + 0.04 * span, f"{m:.{o['dec']}f}", ha="center", va="bottom",
+                    fontsize=fs - 2, color="k")
+
+    ax.set_xlim(0.5, n + 0.5)
+    ax.set_xticks(range(1, n + 1))
+    ax.set_xticklabels(list(groups), rotation=o["rot"],
+                       ha="right" if o["rot"] not in (0, 90) else "center", fontsize=fs)
+    ax.set_ylabel(ylabel, fontsize=fs + 1)
     if o["ylim"] is not None:
         ax.set_ylim(*o["ylim"])
+    else:
+        ax.set_ylim(min(lows) - 0.12 * span, max(highs) + (0.22 if o["show_vals"] else 0.12) * span)
 
-    # Origin-like frame and ticks
     for sp in ax.spines.values():
-        sp.set_linewidth(1.5)
+        sp.set_linewidth(1.2)
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.tick_params(axis="both", which="major", direction="in", width=1.5, length=6,
-                   labelsize=fs, top=True, right=True)
-    ax.tick_params(axis="y", which="minor", direction="in", width=1.2, length=3, right=True)
-    ax.tick_params(axis="x", top=False)
+    ax.tick_params(axis="both", which="major", direction="in", width=1.2, length=5,
+                   labelsize=fs, top=False, right=True, pad=5)
+    ax.tick_params(axis="y", which="minor", direction="in", width=1.0, length=2.5, right=True)
     fig.tight_layout()
     return fig
 
@@ -204,16 +225,19 @@ except Exception as e:
 # ---------------- Plot settings ----------------
 st.sidebar.header("Plot style")
 ylabel = st.sidebar.text_input("Y-axis label (blank = automatic)", "") or ylabel_auto
-show_mean = st.sidebar.checkbox("Mean line", True)
-err = st.sidebar.radio("Error bars", ["SD", "SEM", "None"], horizontal=True)
-show_box = st.sidebar.checkbox("Box plot behind points", False)
-size = st.sidebar.slider("Point size", 10, 200, 50, 5)
-jitter = st.sidebar.slider("Jitter width", 0.0, 0.4, 0.12, 0.01)
+style_name = st.sidebar.selectbox("Plot style", ["Scatter + mean ± error", "Box + scatter"])
+style = "box" if style_name.startswith("Box") else "scatter"
+err = st.sidebar.radio("Error bars (scatter style)", ["SD", "SEM", "None"], horizontal=True)
+show_vals = st.sidebar.checkbox("Show mean value above each group", False)
+dec = st.sidebar.slider("Decimals for mean value", 0, 4, 2) if show_vals else 2
+size = st.sidebar.slider("Point size", 10, 200, 45, 5)
+jitter = st.sidebar.slider("Jitter width", 0.0, 0.4, 0.14, 0.01)
 alpha = st.sidebar.slider("Point opacity", 0.2, 1.0, 0.9, 0.05)
 marker = st.sidebar.selectbox("Marker", ["o", "s", "^", "D", "v"])
-font = st.sidebar.slider("Font size", 8, 24, 14)
-w = st.sidebar.slider("Figure width (in)", 3.0, 12.0, 5.0, 0.5)
-h = st.sidebar.slider("Figure height (in)", 3.0, 10.0, 4.5, 0.5)
+font = st.sidebar.slider("Font size", 8, 24, 13)
+auto_w = st.sidebar.checkbox("Auto figure width (fits number of groups)", True)
+w = st.sidebar.slider("Figure width (in)", 3.0, 12.0, 5.0, 0.5, disabled=auto_w)
+h = st.sidebar.slider("Figure height (in)", 3.0, 10.0, 4.2, 0.5)
 rot = st.sidebar.selectbox("X label rotation", [0, 30, 45, 90])
 seed = st.sidebar.number_input("Jitter seed", 0, 9999, 1)
 
@@ -232,8 +256,9 @@ if groups:
         for k, nm in enumerate(groups):
             colors[nm] = st.color_picker(nm, ORIGIN_COLORS[k % len(ORIGIN_COLORS)], key=f"col_{k}")
 
-    opts = dict(mean=show_mean, err=err, box=show_box, box_w=0.5, size=size, jitter=jitter,
-                alpha=alpha, marker=marker, font=font, w=w, h=h, rot=rot, seed=int(seed), ylim=ylim)
+    opts = dict(style=style, err=err, show_vals=show_vals, dec=dec, size=size, jitter=jitter,
+                alpha=alpha, marker=marker, font=font, auto_w=auto_w, w=w, h=h, rot=rot,
+                seed=int(seed), ylim=ylim)
     fig = make_plot(groups, ylabel, colors, opts)
 
     left, _ = st.columns([2, 1])
